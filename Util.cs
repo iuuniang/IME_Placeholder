@@ -50,19 +50,31 @@ namespace IIME
         private static extern IntPtr ImmGetDefaultIMEWnd(IntPtr unnamedParam1);
 
         [DllImport("User32.dll")]
-        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam, int lParam);
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
+        private static IntPtr Control(IntPtr hWnd,IntPtr command, IntPtr data)
+        {
+            IntPtr  result = IntPtr.Zero;
+            if (hWnd == IntPtr.Zero) { hWnd = GetForegroundWindow(); }
+            IntPtr hIme = ImmGetDefaultIMEWnd(hWnd);
+            if (hIme != IntPtr.Zero)
+            {
+                result =  SendMessage(hIme, 0x283/*WM_IME_CONTROL*/, command, data);
+            }
+            return result;
+        }
+
         private static IntPtr GetLeaf(IntPtr hWnd)
         {
-            
+
             IntPtr result;
             do
             {
                 result=hWnd;
-                hWnd = GetWindow(hWnd, 5);//GW_CHILD
+                hWnd = GetWindow(hWnd, 5/*GW_CHILD*/);
 
             } while (hWnd!=IntPtr.Zero);
             return result;
@@ -73,62 +85,53 @@ namespace IIME
             return GetWindowThreadProcessId(hWnd, IntPtr.Zero);
         }
 
-        private static bool GetUiInfo(IntPtr hWnd, out GUITHREADINFO Info)
+        private static bool GetUiInfo(IntPtr hWnd, out GUITHREADINFO gUITHREADINFO)
         {
-            Info=default(GUITHREADINFO);
-            if (hWnd == IntPtr.Zero) return false;
+            uint tid = 0;
+            if (hWnd != IntPtr.Zero)
+            {
+                tid = GetThreadProcessId(hWnd);
+            };
+            gUITHREADINFO = new GUITHREADINFO();
+            gUITHREADINFO.cbSize = Marshal.SizeOf(gUITHREADINFO);
 
-            uint tid = GetThreadProcessId(hWnd);
-            bool result = GetGUIThreadInfo(tid, ref Info);
+            bool result = GetGUIThreadInfo(tid, ref gUITHREADINFO);
             return result;
         }
+
         private static IntPtr GetFocus(IntPtr hWnd, bool real)
         {
-            if (hWnd != IntPtr.Zero) { hWnd = GetForegroundWindow(); }
-            GUITHREADINFO gUITHREADINFO = new GUITHREADINFO();
-            gUITHREADINFO.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
-
-            bool result = GetUiInfo(hWnd, out gUITHREADINFO);
+            if (hWnd == IntPtr.Zero) { hWnd = GetForegroundWindow(); }
+            bool result = GetUiInfo(hWnd, out GUITHREADINFO info);
             if (result)
             {
-                if (gUITHREADINFO.hwndFocus != IntPtr.Zero)
-                {
-                    return gUITHREADINFO.hwndFocus;
-                }
-                else if (gUITHREADINFO.hwndCaret != IntPtr.Zero && gUITHREADINFO.flags == GuiThreadInfoFlags.GUI_CARETBLINKING)
-                {
-                    return gUITHREADINFO.hwndCaret;
-                }
+                if (info.hwndFocus!=IntPtr.Zero) { return info.hwndFocus; }
+                if (info.hwndCaret !=IntPtr.Zero  &&
+                    (info.flags & GuiThreadInfoFlags.GUI_CARETBLINKING)==GuiThreadInfoFlags.GUI_CARETBLINKING) { return info.hwndCaret; }
             }
-            if (real) return IntPtr.Zero;
+            if (real) { return hWnd; }
             IntPtr leaf = GetLeaf(hWnd);
-            if (leaf != IntPtr.Zero || leaf ==hWnd) return hWnd;
-
+            if (leaf != IntPtr.Zero || leaf ==hWnd) { return hWnd; }
             return IntPtr.Zero;
         }
 
         private static bool GetOpenStatus(IntPtr hWnd)
         {
-            IntPtr result= IntPtr.Zero;
-            IntPtr hIme = ImmGetDefaultIMEWnd(hWnd);
-            if(hIme != IntPtr.Zero)
-            {
-                result = SendMessage(hIme, 0x283, 5,0);
-            }
-            return Convert.ToBoolean(result);
-        }
-        private static bool GetConversionMode(IntPtr hWnd)
-        {
             IntPtr result = IntPtr.Zero;
             IntPtr hIme = ImmGetDefaultIMEWnd(hWnd);
             if (hIme != IntPtr.Zero)
             {
-                result = SendMessage(hIme, 0x283, 1, 0);
+                result = Control(hWnd,(IntPtr)5/*IMC_GETOPENSTATUS*/,IntPtr.Zero);
             }
             return Convert.ToBoolean(result);
         }
-
-
+        private static IntPtr GetConversionMode(IntPtr hWnd)
+        {
+            IntPtr result = IntPtr.Zero;
+            if (hWnd == IntPtr.Zero) { hWnd = GetForegroundWindow(); }
+            result = Control(hWnd, (IntPtr)1/*IMC_GETCONVERSIONMODE*/, IntPtr.Zero);
+            return result;
+        }
 
         public static void SetOpenStatus(int status)
         {
@@ -137,15 +140,22 @@ namespace IIME
             if (handle.ToInt32() != 0) SendMessage(handle, 0x283, 6, status);
         }
 
-        public static bool CheckImeState()
+        public static bool CheckImeState(IntPtr hWnd)
         {
+            if (hWnd == IntPtr.Zero)
+            {
+                hWnd = GetForegroundWindow();
+                IntPtr i = GetFocus(hWnd, true);
+                hWnd = (i!=IntPtr.Zero) ? i : hWnd;
+            }
+
             bool opened;
 
-            IntPtr hWnd = GetFocus(IntPtr.Zero, false);
-            if (hWnd == IntPtr.Zero)return false;
+            hWnd = GetFocus(IntPtr.Zero, false);
+            if (hWnd == IntPtr.Zero) return false;
             opened = GetOpenStatus(hWnd);
 
-
+            return false;
 
 
         }
